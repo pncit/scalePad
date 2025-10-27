@@ -6,6 +6,7 @@ export type SortDirection = '+' | '-';
 /**
  * A sort specification (field with optional direction)
  */
+// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
 export type SortSpec = `${SortDirection}${string}` | string;
 
 /**
