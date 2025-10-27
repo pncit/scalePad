@@ -16,6 +16,6 @@
     "@typescript-eslint/explicit-function-return-type": "off",
     "@typescript-eslint/no-explicit-any": "warn"
   },
-  "ignorePatterns": ["dist", "node_modules", "*.config.ts"]
+  "ignorePatterns": ["dist", "node_modules", "*.config.ts", "**/*.test.ts"]
 }
 

@@ -6,7 +6,7 @@ export type SortDirection = '+' | '-';
 /**
  * A sort specification (field with optional direction)
  */
-export type SortSpec = string | `${SortDirection}${string}`;
+export type SortSpec = `${SortDirection}${string}` | string;
 
 /**
  * Builds a sort parameter value from sort specifications
