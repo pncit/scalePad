@@ -94,7 +94,7 @@ async function main() {
 }
 
 // Run the example
-if (require.main === module) {
+if (import.meta.url === new URL(process.argv[1], 'file://').href) {
   main().catch((error) => {
     console.error('Error:', error);
     process.exit(1);
