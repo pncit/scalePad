@@ -1,11 +1,11 @@
 {
   "name": "scalepad",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "TypeScript SDK for the ScalePad API",
   "keywords": ["scalepad", "api", "sdk", "typescript"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/robgilbreath/scalePad.git"
+    "url": "https://github.com/pncit/scalePad.git"
   },
   "license": "MIT",
   "author": "Rob Gilbreath",
