@@ -19,4 +19,3 @@ export class TicketsResource extends BaseResource<Ticket> {
     this.sortParamName = 'sort';
   }
 }
-

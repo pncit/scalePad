@@ -46,16 +46,12 @@ export async function* paginateItems<T>(
 /**
  * Collects all pages into a single array
  */
-export async function collectAll<T>(
-  fetchPage: PageFetcher<T>,
-  _pageSize?: number
-): Promise<T[]> {
+export async function collectAll<T>(fetchPage: PageFetcher<T>, _pageSize?: number): Promise<T[]> {
   const items: T[] = [];
-  
+
   for await (const page of paginatePages(fetchPage)) {
     items.push(...page);
   }
-  
+
   return items;
 }
-

@@ -19,4 +19,3 @@ export class ContractsResource extends BaseResource<Contract> {
     this.sortParamName = 'sort';
   }
 }
-

@@ -26,7 +26,7 @@ export function calculateBackoff(attempt: number, baseDelayMs = 1000, maxDelayMs
  * Sleeps for the specified duration
  */
 export function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -36,7 +36,7 @@ export function shouldRetry(error: unknown, config: RetryConfig): boolean {
   if (error instanceof RateLimitError) {
     return config.retryOn429;
   }
-  
+
   if (error instanceof ApiError) {
     // Retry 5xx errors if configured
     if (config.retryOn5xx && error.statusCode >= 500 && error.statusCode < 600) {
@@ -45,7 +45,7 @@ export function shouldRetry(error: unknown, config: RetryConfig): boolean {
     // Don't retry other 4xx or 5xx errors
     return false;
   }
-  
+
   // Retry network errors
   return true;
 }
@@ -59,41 +59,46 @@ export async function withRetry<T>(
   logger: Logger
 ): Promise<T> {
   let lastError: unknown;
-  
+
   for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
     try {
       return await fn();
     } catch (error) {
       lastError = error;
-      
+
       // Don't retry if this is the last attempt
       if (attempt === config.maxRetries) {
         break;
       }
-      
+
       // Check if we should retry this error
       if (!shouldRetry(error, config)) {
         throw error;
       }
-      
+
       // Calculate delay
       let delayMs: number;
       if (error instanceof RateLimitError && error.retryAfter) {
         // Use Retry-After header value
         delayMs = error.retryAfter * 1000;
-        logger.warn(`Rate limited. Retrying after ${error.retryAfter}s (attempt ${attempt + 1}/${config.maxRetries})`);
+        logger.warn(
+          `Rate limited. Retrying after ${error.retryAfter}s (attempt ${attempt + 1}/${config.maxRetries})`
+        );
       } else if (error instanceof ApiError && error.statusCode >= 500) {
         delayMs = calculateBackoff(attempt);
-        logger.warn(`Server error ${error.statusCode}. Retrying in ${Math.round(delayMs)}ms (attempt ${attempt + 1}/${config.maxRetries})`);
+        logger.warn(
+          `Server error ${error.statusCode}. Retrying in ${Math.round(delayMs)}ms (attempt ${attempt + 1}/${config.maxRetries})`
+        );
       } else {
         delayMs = calculateBackoff(attempt);
-        logger.warn(`Request failed. Retrying in ${Math.round(delayMs)}ms (attempt ${attempt + 1}/${config.maxRetries})`);
+        logger.warn(
+          `Request failed. Retrying in ${Math.round(delayMs)}ms (attempt ${attempt + 1}/${config.maxRetries})`
+        );
       }
-      
+
       await sleep(delayMs);
     }
   }
-  
+
   throw lastError;
 }
-

@@ -58,4 +58,3 @@ describe('buildFilterParams', () => {
     expect(params.get('filter[active]')).toBe('eq: true');
   });
 });
-

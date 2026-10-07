@@ -19,4 +19,3 @@ export class ClientsResource extends BaseResource<Client> {
     this.sortParamName = 'sort';
   }
 }
-

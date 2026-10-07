@@ -19,4 +19,3 @@ export class OpportunitiesResource extends BaseResource<Opportunity> {
     this.sortParamName = 'sort';
   }
 }
-

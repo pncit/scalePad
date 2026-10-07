@@ -19,4 +19,3 @@ export class MembersResource extends BaseResource<Member> {
     this.sortParamName = 'sort';
   }
 }
-

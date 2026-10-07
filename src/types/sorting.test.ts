@@ -52,4 +52,3 @@ describe('addSortToParams', () => {
     expect(params.toString()).toBe('');
   });
 });
-

@@ -18,4 +18,3 @@ export interface ListResult<T> {
   total_count: number;
   next_cursor?: string | null;
 }
-

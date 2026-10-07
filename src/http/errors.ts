@@ -19,7 +19,7 @@ export class ApiError extends ScalePadError {
   public readonly errors: ErrorItem[];
 
   constructor(statusCode: number, errors: ErrorItem[]) {
-    const message = errors.map(e => `${e.code}: ${e.title}`).join('; ');
+    const message = errors.map((e) => `${e.code}: ${e.title}`).join('; ');
     super(`API Error (${statusCode}): ${message}`);
     this.name = 'ApiError';
     this.statusCode = statusCode;
@@ -95,19 +95,25 @@ export class TimeoutError extends ScalePadError {
 /**
  * Normalizes API error responses into ErrorItem array
  */
-export function normalizeApiError(statusCode: number, body: unknown, retryAfter?: number): ApiError {
+export function normalizeApiError(
+  statusCode: number,
+  body: unknown,
+  retryAfter?: number
+): ApiError {
   // Try to parse as standard error response
   let errors: ErrorItem[] = [];
-  
+
   if (body && typeof body === 'object' && 'errors' in body && Array.isArray(body.errors)) {
     errors = body.errors as ErrorItem[];
   } else {
     // Fallback error
-    errors = [{
-      code: `HTTP_${statusCode}`,
-      title: `HTTP ${statusCode} error`,
-      detail: typeof body === 'string' ? body : JSON.stringify(body),
-    }];
+    errors = [
+      {
+        code: `HTTP_${statusCode}`,
+        title: `HTTP ${statusCode} error`,
+        detail: typeof body === 'string' ? body : JSON.stringify(body),
+      },
+    ];
   }
 
   // Return specific error types
@@ -117,7 +123,6 @@ export function normalizeApiError(statusCode: number, body: unknown, retryAfter?
   if (statusCode === 429) {
     return new RateLimitError(errors, retryAfter);
   }
-  
+
   return new ApiError(statusCode, errors);
 }
-

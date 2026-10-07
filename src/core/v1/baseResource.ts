@@ -23,12 +23,7 @@ export abstract class BaseResource<T = unknown> {
   protected itemSchema?: z.ZodTypeAny;
   protected sortParamName: 'sort' | 'sort_by' = 'sort';
 
-  constructor(
-    httpClient: HttpClient,
-    logger: Logger,
-    basePath: string,
-    itemSchema?: z.ZodTypeAny
-  ) {
+  constructor(httpClient: HttpClient, logger: Logger, basePath: string, itemSchema?: z.ZodTypeAny) {
     this.httpClient = httpClient;
     this.logger = logger;
     this.basePath = basePath;
@@ -76,14 +71,11 @@ export abstract class BaseResource<T = unknown> {
     if (this.itemSchema) {
       const schema = createPaginatedEnvelopeSchema(this.itemSchema);
       const result = schema.safeParse(response);
-      
+
       if (!result.success) {
-        throw new ResponseValidationError(
-          'Invalid response format',
-          result.error.issues
-        );
+        throw new ResponseValidationError('Invalid response format', result.error.issues);
       }
-      
+
       return result.data as ListResult<T>;
     }
 
@@ -100,14 +92,11 @@ export abstract class BaseResource<T = unknown> {
     // Validate response if schema is provided
     if (this.itemSchema) {
       const result = this.itemSchema.safeParse(response);
-      
+
       if (!result.success) {
-        throw new ResponseValidationError(
-          'Invalid response format',
-          result.error.issues
-        );
+        throw new ResponseValidationError('Invalid response format', result.error.issues);
       }
-      
+
       return result.data as T;
     }
 
@@ -136,4 +125,3 @@ export abstract class BaseResource<T = unknown> {
     }
   }
 }
-

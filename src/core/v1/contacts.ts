@@ -19,4 +19,3 @@ export class ContactsResource extends BaseResource<Contact> {
     this.sortParamName = 'sort';
   }
 }
-

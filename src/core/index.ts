@@ -15,4 +15,3 @@ export class Core {
 
 // Re-export types
 export * from './v1/index.js';
-
