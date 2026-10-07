@@ -36,4 +36,3 @@ export function addSortToParams(
     params.append(paramName, sortValue);
   }
 }
-

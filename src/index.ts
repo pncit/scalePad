@@ -1,6 +1,6 @@
 /**
  * ScalePad SDK for Node.js
- * 
+ *
  * A TypeScript SDK for the ScalePad API with strong typing,
  * Zod validation, pagination helpers, and rate-limit aware retries.
  */
@@ -59,4 +59,3 @@ export { paginatePages, paginateItems, collectAll } from './types/pagination.js'
 // Retry config
 export type { RetryConfig } from './http/retry.js';
 export { DEFAULT_RETRY_CONFIG } from './http/retry.js';
-

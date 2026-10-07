@@ -19,4 +19,3 @@ export class SaaSResource extends BaseResource<SaaS> {
     this.sortParamName = 'sort';
   }
 }
-

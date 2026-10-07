@@ -43,4 +43,3 @@ export type { Member } from './members.js';
 export type { SaaS } from './saas.js';
 export type { Ticket } from './tickets.js';
 export type { Opportunity } from './opportunities.js';
-

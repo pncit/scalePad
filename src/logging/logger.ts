@@ -38,7 +38,11 @@ function redactSensitive(value: unknown): unknown {
     }
     const redacted: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(value)) {
-      if (key.toLowerCase().includes('key') || key.toLowerCase().includes('token') || key.toLowerCase().includes('secret')) {
+      if (
+        key.toLowerCase().includes('key') ||
+        key.toLowerCase().includes('token') ||
+        key.toLowerCase().includes('secret')
+      ) {
         redacted[key] = '***REDACTED***';
       } else {
         redacted[key] = redactSensitive(val);
@@ -125,4 +129,3 @@ export function createLogger(level: LogLevel = 'info', customLogger?: Logger): L
   }
   return new ConsoleLogger(level);
 }
-

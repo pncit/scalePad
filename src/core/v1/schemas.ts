@@ -46,4 +46,3 @@ export type PaginatedResponse<T> = {
 export function createSingleItemSchema<T extends z.ZodTypeAny>(itemSchema: T) {
   return itemSchema;
 }
-

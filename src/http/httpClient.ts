@@ -32,24 +32,22 @@ export class HttpClient {
   /**
    * Makes an HTTP request with timeout and retry logic
    */
-  async request<T>(
-    path: string,
-    options: RequestOptions = {}
-  ): Promise<T> {
+  async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const { logger, retry } = this.config;
 
-    return withRetry(async () => {
-      return this.executeRequest<T>(path, options);
-    }, retry, logger);
+    return withRetry(
+      async () => {
+        return this.executeRequest<T>(path, options);
+      },
+      retry,
+      logger
+    );
   }
 
   /**
    * Executes a single HTTP request
    */
-  private async executeRequest<T>(
-    path: string,
-    options: RequestOptions
-  ): Promise<T> {
+  private async executeRequest<T>(path: string, options: RequestOptions): Promise<T> {
     const { apiKey, baseUrl, timeoutMs, logger } = this.config;
     const fetchFn = this.config.fetch ?? globalThis.fetch;
 
@@ -58,7 +56,7 @@ export class HttpClient {
 
     // Build headers
     const headers: Record<string, string> = {
-      'accept': 'application/json',
+      accept: 'application/json',
       'x-api-key': apiKey,
       ...options.headers,
     };
@@ -94,13 +92,13 @@ export class HttpClient {
         }
 
         // Parse JSON response
-        const data = await response.json() as T;
+        const data = (await response.json()) as T;
         return data;
       }
 
       // Handle error responses
       await this.handleErrorResponse(response);
-      
+
       // This line should never be reached due to handleErrorResponse throwing
       throw new Error('Unexpected error handling response');
     } catch (error) {
@@ -143,7 +141,7 @@ export class HttpClient {
 
     // Validate error response schema
     const errorResponse = ErrorResponseSchema.safeParse(body);
-    
+
     if (errorResponse.success) {
       throw normalizeApiError(response.status, errorResponse.data, retryAfterSeconds);
     }
@@ -182,4 +180,3 @@ export class HttpClient {
     return this.request<T>(path, { method: 'DELETE' });
   }
 }
-

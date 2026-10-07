@@ -37,10 +37,12 @@ function needsQuoting(value: string): boolean {
 function formatFilterValue(value: string | number | boolean | string[]): string {
   if (Array.isArray(value)) {
     // For 'in' operator - join with comma
-    return value.map(v => {
-      const str = String(v);
-      return needsQuoting(str) ? `"${str}"` : str;
-    }).join(',');
+    return value
+      .map((v) => {
+        const str = String(v);
+        return needsQuoting(str) ? `"${str}"` : str;
+      })
+      .join(',');
   }
 
   const str = String(value);
@@ -52,7 +54,7 @@ function formatFilterValue(value: string | number | boolean | string[]): string 
  */
 export function buildFilterParams(filters?: Filters): URLSearchParams {
   const params = new URLSearchParams();
-  
+
   if (!filters) {
     return params;
   }
@@ -66,4 +68,3 @@ export function buildFilterParams(filters?: Filters): URLSearchParams {
 
   return params;
 }
-

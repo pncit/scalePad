@@ -91,4 +91,3 @@ export class ScalePadClient {
     return this.logger;
   }
 }
-

@@ -19,4 +19,3 @@ export class HardwareAssetsResource extends BaseResource<HardwareAsset> {
     this.sortParamName = 'sort';
   }
 }
-
