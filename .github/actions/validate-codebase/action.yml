@@ -1,0 +1,179 @@
+name: 'Validate codebase'
+description: >-
+  Run the standard npm CI gates against the calling repo: `npm ci`,
+  then `npm run lint`, `npm run typecheck`, `npm test`. Each is
+  expected to be defined as a script in the repo's package.json (or to
+  fan out via npm workspaces to per-workspace scripts).
+
+# This composite is the "does the codebase pass the org-standard
+# checks?" assertion. It's one of three validate-* actions:
+#
+#   validate-containers-spec  static check of the deploy `containers` JSON
+#   validate-codebase         (this) lint + typecheck + test against the repo
+#   validate-build            docker build of every container that declares build:
+#
+# Each is invocable independently; callers pick the subset that
+# matches what their workflow needs to check.
+#
+# Does its own checkout + setup-node so it's self-contained — invoke
+# directly from a job's `steps:` with the npm-token and the two toolchain
+# versions (`vars.NODE_VERSION`, `vars.NPM_VERSION`).
+
+# Vendored from pncit/shared-actions@v3.6.1 (8519df0) because this repo is PUBLIC
+# and shared-actions is PRIVATE — a public repo can't `uses:` a private
+# action. Byte-for-byte identical to upstream apart from this comment;
+# re-copy when upstream changes (see .github/actions/README.md).
+
+inputs:
+  npm-token:
+    description: 'npm token used for `npm ci` (NODE_AUTH_TOKEN in the install step).'
+    required: true
+  npm-scope:
+    description: 'npm scope (for private packages).'
+    required: false
+    default: '@pncit'
+  registry-url:
+    description: 'npm registry URL.'
+    required: false
+    default: 'https://registry.npmjs.org'
+
+  node-version:
+    description: >-
+      Exact Node version to install with setup-node, e.g. "24.20.0".
+      Callers pass `vars.NODE_VERSION`. There is deliberately no default
+      and no `.nvmrc` fallback: the same value is handed to `deploy` /
+      `validate-build` as the `NODE_VERSION` build arg, so the image is
+      built on the Node that tested it, and a bump is one org variable
+      instead of a per-repo sweep. Empty fails the job.
+    required: true
+  npm-version:
+    description: >-
+      Exact npm version to install after setup-node, e.g. "12.0.2".
+      Callers pass `vars.NPM_VERSION`; deploy / validate-build receive the
+      same value as the `NPM_VERSION` build arg. `.nvmrc`-style Node
+      majors let the bundled npm cross 11 -> 12 (and start blocking
+      unapproved install scripts) with nothing committed — pinning here
+      and in the Dockerfile from one variable is what stops that. Empty
+      fails the job.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # `required: true` doesn't catch an unset org variable — it arrives as
+    # "". Fail here with a message that names the variable rather than
+    # letting setup-node resolve "" to a surprise.
+    - name: Require toolchain versions
+      shell: bash
+      env:
+        NODE_VERSION: ${{ inputs.node-version }}
+        NPM_VERSION: ${{ inputs.npm-version }}
+      run: |
+        ok=true
+        [[ -n "$NODE_VERSION" ]] || { echo "::error::node-version is empty — set the org variable NODE_VERSION (or a repo override) and pass vars.NODE_VERSION."; ok=false; }
+        [[ -n "$NPM_VERSION" ]]  || { echo "::error::npm-version is empty — set the org variable NPM_VERSION (or a repo override) and pass vars.NPM_VERSION."; ok=false; }
+        $ok
+
+    - name: Checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Setup Node
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: ${{ inputs.node-version }}
+        # The GitHub cache service only pays off on a fresh VM. On the
+        # self-hosted fleet ~/.npm persists between jobs, so `npm ci` is
+        # already warm — while `cache: npm` cost every job with a changed
+        # lockfile (every Dependabot PR) a restore miss plus a post-job
+        # tar+zstd+upload of the whole shared ~/.npm: 1 GB at ~2 MB/s,
+        # ten minutes of runner occupancy and a 1 GB temp file per job.
+        # Interrupted mid-upload (cancel, disk full, worker killed) the
+        # cache-save child outlives the job and spins at 100 % CPU. So:
+        # cache on GitHub-hosted runners only.
+        cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
+        package-manager-cache: ${{ runner.environment == 'github-hosted' }}
+        registry-url: ${{ inputs.registry-url }}
+        scope: ${{ inputs.npm-scope }}
+        # actions/setup-node@v6 dropped `always-auth: true` — it was a
+        # v4-era flag and is no longer needed. Specifying it produced an
+        # "Unexpected input" warning during the first real deploy run.
+
+    # setup-node gives us whatever npm its Node bundles; replace it before
+    # anything reads it.
+    - name: Pin npm
+      shell: bash
+      run: |
+        npm i -g "npm@${NPM_VERSION}"
+        echo "npm pinned to $(npm --version) ($(command -v npm))"
+      env:
+        NPM_VERSION: ${{ inputs.npm-version }}
+
+    # Assert the toolchain `npm ci` is about to use is the one that was
+    # asked for — a tool-cache miss on a self-hosted runner can leave
+    # setup-node falling back to the system Node. Prefix match so a
+    # less-specific variable value ("24") still works if anyone sets one.
+    - name: Verify Node toolchain
+      shell: bash
+      env:
+        WANT_NODE: ${{ inputs.node-version }}
+        WANT_NPM: ${{ inputs.npm-version }}
+      run: |
+        NODE_VERSION=$(node --version)
+        NPM_VERSION=$(npm --version)
+        echo "node: $NODE_VERSION ($(which node))"
+        echo "npm:  $NPM_VERSION ($(which npm))"
+        if [[ "$NODE_VERSION" != "v${WANT_NODE}" && "$NODE_VERSION" != "v${WANT_NODE}".* ]]; then
+          echo "::error::Expected Node ${WANT_NODE}, got $NODE_VERSION."
+          echo "::error::The runner is falling back to system Node — check actions/setup-node's download/tool-cache on this runner."
+          exit 1
+        fi
+        if [[ "$NPM_VERSION" != "${WANT_NPM}" && "$NPM_VERSION" != "${WANT_NPM}".* ]]; then
+          echo "::error::Expected npm ${WANT_NPM}, got $NPM_VERSION."
+          echo "::error::The npm pin did not take; npm version mismatch resolves nested optional deps differently and breaks npm ci against the committed lockfile."
+          exit 1
+        fi
+
+    - name: Install dependencies
+      shell: bash
+      env:
+        NODE_AUTH_TOKEN: ${{ inputs.npm-token }}
+      run: npm ci 2>&1 | tee "${RUNNER_TEMP}/npm-ci.log"
+
+    # npm 11.16.0 added per-package install-script allowlists (the
+    # `allowScripts` field in package.json). npm 11 warns and still runs
+    # them; npm 12 blocks them -- and `npm ci` exits 0 either way, so a
+    # native module can silently never build. That is what took
+    # documentation-server's whole suite down with 262 "Could not locate
+    # the bindings file" errors against a green `npm ci`.
+    #
+    # Both the warn-phase and block-phase messages contain the literal
+    # string `allowScripts`, so matching that catches the block and also
+    # gives early warning on a runner still effectively on npm 11.
+    #
+    # Fatal since v3.1.0: every pncit Node repo declares `allowScripts`
+    # (pncit/.github#24), so a hit here means a dependency bump brought a
+    # new or re-versioned install script that nobody has looked at yet.
+    # The fix is the one the message gives -- approve or deny it in
+    # package.json -- not to loosen this step.
+    - name: Audit skipped install scripts
+      shell: bash
+      run: |
+        if grep -q 'allowScripts' "${RUNNER_TEMP}/npm-ci.log"; then
+          grep 'allowScripts' "${RUNNER_TEMP}/npm-ci.log" >&2
+          echo "::error::npm flagged or skipped one or more install scripts. If any is a native module, it did not build and the install still reported success. Review with: npx npm@${NPM_VERSION} install-scripts ls, then approve <pkg> (or deny <pkg>) and commit the package.json allowScripts change."
+          exit 1
+        fi
+      env:
+        NPM_VERSION: ${{ inputs.npm-version }}
+
+    - name: Lint
+      shell: bash
+      run: npm run lint
+
+    - name: Typecheck
+      shell: bash
+      run: npm run typecheck
+
+    - name: Test
+      shell: bash
+      run: npm test

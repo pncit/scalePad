@@ -1,0 +1,3 @@
+# CODEOWNERS: GitHub requests review from the listed owners on any PR touching a matching path.
+# @pncit/devops is the owner of record here for the org ruleset's require_code_owner_review.
+*  @pncit/devops

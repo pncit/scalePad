@@ -1,0 +1,106 @@
+name: Publish
+
+# Consumes the Validate workflow's result instead of re-validating: publish
+# only fires after a successful Validate run on main, and it ships the exact
+# SHA that Validate ran against. A new push re-runs Validate (and thus a fresh
+# publish); publish can never run without a successful validation for that
+# commit.
+#
+# NOTE: `workflows:` below must match the Validate workflow's `name:` field.
+on:
+  workflow_run:
+    workflows: ['Validate']
+    types: [completed]
+    branches: [main]
+  # Manual recovery — e.g. re-publishing main after a transient registry error.
+  # Skips the workflow_run gate; operator's call.
+  workflow_dispatch:
+
+# The workflow floor is read-only; only the publish job below mints an OIDC
+# token, so "which job can publish" is answerable by reading the file.
+permissions:
+  contents: read
+
+# Serialize publishes: a newer publish supersedes an in-progress older one.
+concurrency:
+  group: publish-scalepad
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    # Only on a successful Validate that ran on main via push, or a manual
+    # dispatch. PR-branch Validate runs are filtered out here.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success'
+        && github.event.workflow_run.head_branch == 'main'
+        && github.event.workflow_run.event == 'push')
+    # GitHub-hosted: scalepad is PUBLIC, so npm attaches a provenance
+    # attestation on publish, which npm only allows from GitHub-hosted runners
+    # (self-hosted → HTTP 422). Post-merge trusted code, and only runs on real
+    # version-bump releases.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Fixes the OIDC subject at repo:pncit/scalePad:environment:production,
+    # which is what the npm trusted publisher is configured against, and
+    # records each release as a deployment.
+    environment: production
+    permissions:
+      id-token: write # OIDC trusted publishing
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Pin to the commit Validate ran against, not main's current HEAD, so
+          # a commit landing between Validate's success and this trigger can't
+          # ship unvalidated. Empty for workflow_dispatch → falls back to the
+          # default ref.
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+
+      # The org toolchain (vars.NODE_VERSION / vars.NPM_VERSION) is the only
+      # place a Node or npm version is written down, and it is the one
+      # validate-codebase just tested this tree on.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ vars.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+          # No `scope`: scalepad is an unscoped, public package.
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+
+      - name: Pin npm
+        run: npm install -g "npm@${{ vars.NPM_VERSION }}"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # Version gate. This is the single place a version bump is enforced:
+      # merges that don't bump package.json (Dependabot, docs, CI) are a clean
+      # no-op here rather than a failed run, and npm itself refuses to publish
+      # over an existing version, so main can never re-release silently.
+      - name: Check if version already published
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "${NAME}@${VERSION}" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${NAME}@${VERSION} already on npm — no version bump on this commit, skipping publish."
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "${NAME}@${VERSION} not yet published — will publish."
+          fi
+
+      # --provenance: public package on a GitHub-hosted runner. Authentication
+      # is the OIDC trusted publisher configured on npm for this repository,
+      # workflow file and environment; no token is involved anywhere.
+      - name: Publish to npm
+        if: steps.check.outputs.published == 'false'
+        run: npm publish --provenance

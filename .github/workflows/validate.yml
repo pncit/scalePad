@@ -1,0 +1,124 @@
+name: Validate
+
+on:
+  pull_request:
+    branches: [main]
+  # Also runs on the merge commit so npm-publish.yml can consume this run's
+  # `workflow_run` success instead of re-validating. Running validation here
+  # (not in the publish workflow) means publish never ships a commit that
+  # wasn't validated as-is, and validation is never duplicated.
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A Dependabot rebase or a force-push replaces the PR head; the run queued
+# for the old head is worthless, so cancel it. Push runs group by sha and
+# are never cancelled.
+concurrency:
+  group: validate-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Squash-only + strict up-to-date mean the tree on main after a merge is
+  # byte-identical to the PR head tree that `validate` already passed. On the
+  # push run, look that PR run up (by tree SHA) and skip the codebase checks
+  # if it exists; the workflow still completes `success`, which is what
+  # npm-publish.yml's `workflow_run` trigger needs. Anything reaching main
+  # without a matching PR run (admin bypass push) falls through to the full
+  # validate.
+  precheck:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      validated: ${{ steps.tree.outputs.validated }}
+    steps:
+      # Local composite (see .github/actions/README.md): the repo has to be
+      # checked out before `./.github/actions/*` can be referenced.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+      - id: tree
+        uses: ./.github/actions/verify-validated-tree
+
+  validate:
+    needs: precheck
+    # Push events (merge to main) validate unless `precheck` above found the
+    # PR run that already passed this exact tree — either way that run is what
+    # gates publishing. PR events only run when the PR's head branch lives in
+    # THIS repo (which requires write access); PRs from forks have a different
+    # head repo and skip the job. On the ephemeral GitHub-hosted runner below
+    # this is a POLICY choice, not a runner-safety requirement (fork runs are
+    # sandboxed and get no secrets) — drop the `if` to give fork PRs CI.
+    #
+    # Head-repo identity rather than author_association, because the latter
+    # downgrades private org members to "CONTRIBUTOR" in the event payload,
+    # which would wrongly skip our own team's PRs. head.repo is null for
+    # deleted forks, so the comparison safely fails closed (skips).
+    #
+    # Dependabot PRs use in-repo branches, so they satisfy the head-repo check
+    # and RUN here. They are exempt from the version-bump gate below, so they
+    # can merge unpublished; the next human bump ships them.
+    if: >-
+      !cancelled() &&
+      (github.event_name != 'push' || needs.precheck.outputs.validated != 'true') &&
+      (github.event_name != 'pull_request' ||
+        github.event.pull_request.head.repo.full_name == github.repository)
+    # GitHub-hosted, like npm-publish.yml: the org's self-hosted runner group
+    # does not accept jobs from public repos (allows_public_repositories=false,
+    # on purpose — it keeps fork PRs off the fleet), so `self-hosted` here
+    # could never be scheduled. Nothing below depends on runner-local state.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Up-front checkout: required so the local composite actions
+      # (./.github/actions/*) exist on the runner before they're referenced.
+      # The vendored actions live here (not in the private pncit/shared-actions)
+      # because this repo is PUBLIC and can't clone a private action.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Version-bump gate: scalepad is a published library, so every PR into
+      # main must bump package.json's version, or the publish workflow has
+      # nothing to publish after the squash. Dependabot is exempt (the
+      # action's default): it never bumps the package's own version, so its
+      # merges land unpublished until the next human bump. So are PRs that
+      # touch only `.github/**` (the default exempt-paths): CI changes ship
+      # nothing. PR-only — on the main push the gate would compare to HEAD^
+      # and fail every unversioned merge; npm-publish.yml already skips when
+      # there is nothing new to publish.
+      - uses: ./.github/actions/verify-version-bump
+        if: github.event_name == 'pull_request'
+
+      # Codebase checks: npm ci (with the fatal allowScripts audit) + lint +
+      # typecheck + test. The action does its own checkout + setup-node on the
+      # org toolchain (vars.NODE_VERSION / vars.NPM_VERSION). NPM_TOKEN is the
+      # org's read-only install token; this repo has no private dependencies,
+      # so an empty value here still installs.
+      - uses: ./.github/actions/validate-codebase
+        with:
+          npm-token: ${{ secrets.NPM_TOKEN }}
+          node-version: ${{ vars.NODE_VERSION }}
+          npm-version: ${{ vars.NPM_VERSION }}
+
+      # Generated-output drift gate: src/**/*.generated.ts is committed, so
+      # lint, typecheck and test above all read the committed copy and would
+      # pass even when the generator or the vendored specs no longer produce
+      # it. Regenerating here puts that failure on the PR that changes the
+      # spec, the generator, or openapi-typescript. validate-codebase checked
+      # out into the default workspace and ran npm ci there, so node_modules
+      # is already in place.
+      - name: Generated output matches the specs and the installed generator
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run generate
+          git diff --exit-code -- 'src/**/*.generated.ts' \
+            || { echo "::error::Generated SDK is stale — run 'npm run generate' and commit the result."; exit 1; }

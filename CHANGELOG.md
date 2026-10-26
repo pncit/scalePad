@@ -5,10 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2026-10-26
+## [0.2.1] - 2026-10-26
 
 The SDK is now generated from ScalePad's published OpenAPI documents
-(`spec/*.json`, refreshed with `npm run fetch-specs && npm run generate`).
+(`spec/*.json`, refreshed with `npm run fetch-specs && npm run generate`), and
+releases are published from CI: a merge to `main` that bumps `package.json`'s
+version is validated and then published by GitHub Actions through npm trusted
+publishing (OIDC), with a provenance attestation.
 
 ### Added
 
@@ -39,6 +42,7 @@ The SDK is now generated from ScalePad's published OpenAPI documents
   API's own parameter names (`page_size`, `cursor`).
 - Zod has been removed; responses are typed from the specification and not
   validated at runtime, so additive API changes never break callers.
+- Node.js 20 or later is required (`File` and `FormData` are used for uploads).
 
 ## [0.1.0] - 2025-10-27
 
@@ -60,5 +64,5 @@ The SDK is now generated from ScalePad's published OpenAPI documents
 - Full test coverage
 - Documentation and examples
 
-[0.2.0]: https://github.com/pncit/scalepad/releases/tag/v0.2.0
-[0.1.0]: https://github.com/pncit/scalepad/releases/tag/v0.1.0
+[0.2.1]: https://github.com/pncit/scalePad/releases/tag/v0.2.1
+[0.1.0]: https://github.com/pncit/scalePad/releases/tag/v0.1.0
