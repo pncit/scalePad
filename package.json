@@ -1,16 +1,17 @@
 {
   "name": "scalepad",
-  "version": "0.1.1",
-  "description": "TypeScript SDK for the ScalePad API",
+  "version": "0.2.0",
+  "description": "TypeScript SDK for the ScalePad Core and Lifecycle Manager APIs, generated from the published OpenAPI documents",
   "keywords": [
     "scalepad",
+    "lifecycle-manager",
     "api",
     "sdk",
     "typescript"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/pncit/scalePad.git"
+    "url": "https://github.com/pncit/scalepad.git"
   },
   "license": "MIT",
   "author": "Rob Gilbreath",
@@ -38,25 +39,25 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "fetch-specs": "node scripts/fetch-specs.mjs",
+    "generate": "node scripts/generate.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "prettier --check src tsup.config.ts vitest.config.ts tsconfig.json package.json",
+    "lint": "prettier --check src scripts examples tsup.config.ts vitest.config.ts tsconfig.json package.json",
+    "format": "prettier --write src scripts examples tsup.config.ts vitest.config.ts tsconfig.json package.json",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run validate && npm run build",
     "validate": "npm run typecheck && npm run lint && npm test",
+    "prepublishOnly": "npm run validate && npm run build",
     "publish:npm": "npm publish --access public",
-    "publish:dry-run": "npm publish --dry-run",
-    "format": "prettier --write src tsup.config.ts vitest.config.ts tsconfig.json package.json"
-  },
-  "dependencies": {
-    "zod": "^4.0.0-beta.2"
+    "publish:dry-run": "npm publish --dry-run"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "openapi-typescript": "^7.13.0",
+    "prettier": "^3.9.1",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
-    "vitest": "^5.0.0",
-    "prettier": "^3.9.1"
+    "vitest": "^5.0.0"
   },
   "engines": {
     "node": ">=18.0.0"

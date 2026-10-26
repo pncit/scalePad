@@ -1,61 +1,50 @@
 /**
- * ScalePad SDK for Node.js
- *
- * A TypeScript SDK for the ScalePad API with strong typing,
- * Zod validation, pagination helpers, and rate-limit aware retries.
+ * ScalePad SDK for Node.js: typed access to the Core and Lifecycle Manager APIs,
+ * generated from ScalePad's published OpenAPI documents.
  */
 
-// Main client
 export { ScalePadClient } from './client.js';
 export type { ScalePadClientConfig } from './client.js';
 
-// Logging
-export type { Logger, LogLevel } from './logging/logger.js';
-export { ConsoleLogger, NoOpLogger } from './logging/logger.js';
+// Product namespaces. The classes are exported so callers can type variables
+// such as `const agreements: LifecycleManagerV1['agreements']`.
+export { CoreV1 } from './core/v1/operations.generated.js';
+export * as CoreV1Operations from './core/v1/operations.generated.js';
+export type * as CoreV1Types from './core/v1/types.generated.js';
+export { LifecycleManagerV1 } from './lifecycleManager/v1/operations.generated.js';
+export * as LifecycleManagerV1Operations from './lifecycleManager/v1/operations.generated.js';
+export type * as LifecycleManagerV1Types from './lifecycleManager/v1/types.generated.js';
 
-// Types
-export type { Filters, FilterClause, FilterOp } from './types/filters.js';
-export type { SortSpec, SortDirection } from './types/sorting.js';
-export type { PaginationOptions } from './types/pagination.js';
-export type { ListResult, BaseListOptions } from './types/common.js';
-
-// Core API types
+// Request building blocks
 export type {
-  Client,
-  Contact,
-  Contract,
-  HardwareAsset,
-  Member,
-  SaaS,
-  Ticket,
-  Opportunity,
-} from './core/index.js';
-
-// Schemas
-export {
-  ErrorItemSchema,
-  ErrorResponseSchema,
-  createPaginatedEnvelopeSchema,
-  createSingleItemSchema,
-} from './core/v1/schemas.js';
-export type { ErrorItem, ErrorResponse, PaginatedResponse } from './core/v1/schemas.js';
+  FilterOp,
+  FilterScalar,
+  FilterClause,
+  FilterValue,
+  Filters,
+} from './types/filters.js';
+export { formatFilterValue } from './types/filters.js';
+export type { SortSpec, SortDirection } from './types/sorting.js';
+export type { Page, PageFetcher } from './types/pagination.js';
+export { paginatePages, paginateItems, collectAll } from './types/pagination.js';
+export type { BinaryResponse, MultipartBody } from './http/httpClient.js';
 
 // Errors
+export type { ErrorItem } from './http/errors.js';
 export {
   ScalePadError,
   ApiError,
   AuthenticationError,
+  SubscriptionRequiredError,
+  ForbiddenError,
+  NotFoundError,
   RateLimitError,
-  ResponseValidationError,
   NetworkError,
   TimeoutError,
 } from './http/errors.js';
 
-// Utilities
-export { buildFilterParams } from './types/filters.js';
-export { buildSortParam, addSortToParams } from './types/sorting.js';
-export { paginatePages, paginateItems, collectAll } from './types/pagination.js';
-
-// Retry config
+// Configuration
 export type { RetryConfig } from './http/retry.js';
 export { DEFAULT_RETRY_CONFIG } from './http/retry.js';
+export type { Logger, LogLevel } from './logging/logger.js';
+export { ConsoleLogger, NoOpLogger } from './logging/logger.js';

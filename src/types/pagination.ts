@@ -1,57 +1,38 @@
-import { ListResult } from './common.js';
-
-/**
- * Options for paginated requests
- */
-export interface PaginationOptions {
-  pageSize?: number;
-  cursor?: string;
+/** One page of a cursor-paginated list. */
+export interface Page<T> {
+  data: T[];
+  total_count: number;
+  next_cursor: string | null;
 }
 
-/**
- * Type for a function that fetches a page of data
- */
-export type PageFetcher<T> = (cursor?: string) => Promise<ListResult<T>>;
+/** Fetches the page identified by `cursor`, or the first page when it is undefined. */
+export type PageFetcher<T> = (cursor?: string) => Promise<Page<T>>;
 
 /**
- * Async generator that yields pages of data
+ * Walks every page. Cursor pagination is not atomic: records changed while
+ * iterating may be skipped or repeated.
  */
-export async function* paginatePages<T>(
-  fetchPage: PageFetcher<T>,
-  _pageSize?: number
-): AsyncGenerator<T[], void, unknown> {
+export async function* paginatePages<T>(fetchPage: PageFetcher<T>): AsyncGenerator<T[], void> {
   let cursor: string | undefined;
-
   do {
-    const result = await fetchPage(cursor);
-    yield result.data;
-    cursor = result.next_cursor ?? undefined;
+    const page = await fetchPage(cursor);
+    yield page.data;
+    cursor = page.next_cursor ?? undefined;
   } while (cursor);
 }
 
-/**
- * Async generator that yields individual items
- */
-export async function* paginateItems<T>(
-  fetchPage: PageFetcher<T>,
-  _pageSize?: number
-): AsyncGenerator<T, void, unknown> {
+/** Yields every item across all pages. */
+export async function* paginateItems<T>(fetchPage: PageFetcher<T>): AsyncGenerator<T, void> {
   for await (const page of paginatePages(fetchPage)) {
-    for (const item of page) {
-      yield item;
-    }
+    yield* page;
   }
 }
 
-/**
- * Collects all pages into a single array
- */
-export async function collectAll<T>(fetchPage: PageFetcher<T>, _pageSize?: number): Promise<T[]> {
+/** Collects every item across all pages into one array. */
+export async function collectAll<T>(fetchPage: PageFetcher<T>): Promise<T[]> {
   const items: T[] = [];
-
   for await (const page of paginatePages(fetchPage)) {
     items.push(...page);
   }
-
   return items;
 }

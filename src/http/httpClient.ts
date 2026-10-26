@@ -1,7 +1,7 @@
 import { Logger } from '../logging/logger.js';
-import { normalizeApiError, NetworkError, TimeoutError } from './errors.js';
+import { errorFromResponse, NetworkError, TimeoutError } from './errors.js';
 import { withRetry, RetryConfig } from './retry.js';
-import { ErrorResponseSchema } from '../core/v1/schemas.js';
+import { buildQuery, QueryOptions, QueryParams } from './query.js';
 
 export interface HttpClientConfig {
   apiKey: string;
@@ -12,171 +12,134 @@ export interface HttpClientConfig {
   fetch?: typeof globalThis.fetch;
 }
 
-export interface RequestOptions {
-  method?: string;
-  headers?: Record<string, string>;
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+/** A downloaded file: exports, reports, logos, and attachment contents. */
+export interface BinaryResponse {
+  data: Uint8Array;
+  contentType: string | null;
+  /** From the `Content-Disposition` header, when the server names the file. */
+  fileName: string | null;
+}
+
+/** Fields of a multipart upload; `Blob` values become file parts, everything else is sent as text. */
+export type MultipartBody = Record<string, Blob | string | number | boolean | undefined>;
+
+export interface RequestSpec extends QueryOptions {
+  method: HttpMethod;
+  /** Path relative to the base URL, with path parameters already encoded. */
+  path: string;
+  query?: QueryParams;
+  /** Sent as JSON. */
   body?: unknown;
-  signal?: AbortSignal;
+  /** Sent as `multipart/form-data`; mutually exclusive with `body`. */
+  multipart?: MultipartBody;
+  /** Query parameters typed as dates (not date-times), so `Date` values are trimmed to the day. */
+  dateOnlyParams?: readonly string[];
+  /** What a successful response carries. */
+  responseType: 'json' | 'binary' | 'void';
 }
 
 /**
- * HTTP client for making requests to the ScalePad API
+ * Sends authenticated requests to the ScalePad API with a per-attempt timeout,
+ * transparent retries, and typed error mapping.
  */
 export class HttpClient {
-  private config: HttpClientConfig;
+  constructor(private readonly config: HttpClientConfig) {}
 
-  constructor(config: HttpClientConfig) {
-    this.config = config;
+  request<T>(spec: RequestSpec): Promise<T> {
+    return withRetry(() => this.send<T>(spec), this.config.retry, this.config.logger);
   }
 
-  /**
-   * Makes an HTTP request with timeout and retry logic
-   */
-  async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-    const { logger, retry } = this.config;
-
-    return withRetry(
-      async () => {
-        return this.executeRequest<T>(path, options);
-      },
-      retry,
-      logger
-    );
-  }
-
-  /**
-   * Executes a single HTTP request
-   */
-  private async executeRequest<T>(path: string, options: RequestOptions): Promise<T> {
+  private async send<T>(spec: RequestSpec): Promise<T> {
     const { apiKey, baseUrl, timeoutMs, logger } = this.config;
     const fetchFn = this.config.fetch ?? globalThis.fetch;
 
-    const url = `${baseUrl}${path}`;
-    const method = options.method ?? 'GET';
+    const query = buildQuery(spec.query, spec).toString();
+    const url = `${baseUrl}${spec.path}${query ? `?${query}` : ''}`;
 
-    // Build headers
     const headers: Record<string, string> = {
-      accept: 'application/json',
+      accept: spec.responseType === 'json' ? 'application/json' : '*/*',
       'x-api-key': apiKey,
-      ...options.headers,
     };
-
-    // Add content-type for requests with body
-    if (options.body && !headers['content-type']) {
+    let body: string | FormData | undefined;
+    if (spec.multipart) {
+      body = new FormData();
+      for (const [name, value] of Object.entries(spec.multipart)) {
+        if (value === undefined) continue;
+        if (value instanceof Blob) body.append(name, value, fileNameOf(value));
+        else body.append(name, String(value));
+      }
+    } else if (spec.body !== undefined) {
       headers['content-type'] = 'application/json';
+      body = JSON.stringify(spec.body);
     }
 
-    // Create abort controller for timeout
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
-
+    let response: Response;
     try {
-      logger.debug(`${method} ${url}`);
-
-      const response = await fetchFn(url, {
-        method,
+      logger.debug(`${spec.method} ${url}`);
+      response = await fetchFn(url, {
+        method: spec.method,
         headers,
-        body: options.body ? JSON.stringify(options.body) : undefined,
-        signal: options.signal ?? abortController.signal,
+        body,
+        signal: abortController.signal,
       });
-
-      clearTimeout(timeoutId);
-
-      logger.debug(`${method} ${url} -> ${response.status}`);
-
-      // Handle successful responses
-      if (response.ok) {
-        // 204 No Content
-        if (response.status === 204) {
-          return undefined as T;
-        }
-
-        // Parse JSON response
-        const data = (await response.json()) as T;
-        return data;
-      }
-
-      // Handle error responses
-      await this.handleErrorResponse(response);
-
-      // This line should never be reached due to handleErrorResponse throwing
-      throw new Error('Unexpected error handling response');
     } catch (error) {
-      clearTimeout(timeoutId);
-
-      // Handle timeout
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new TimeoutError(timeoutMs);
-      }
-
-      // Re-throw API errors
-      if (error instanceof Error && 'statusCode' in error) {
-        throw error;
-      }
-
-      // Wrap network errors
+      if (error instanceof Error && error.name === 'AbortError') throw new TimeoutError(timeoutMs);
       throw new NetworkError(
         `Network request failed: ${error instanceof Error ? error.message : String(error)}`,
-        error instanceof Error ? error : undefined
+        { cause: error }
       );
+    } finally {
+      clearTimeout(timeoutId);
+    }
+    logger.debug(`${spec.method} ${url} -> ${response.status}`);
+
+    if (!response.ok) throw await this.errorFor(response);
+
+    switch (spec.responseType) {
+      case 'void':
+        return undefined as T;
+      case 'binary':
+        return {
+          data: new Uint8Array(await response.arrayBuffer()),
+          contentType: response.headers.get('content-type'),
+          fileName: fileNameFromDisposition(response.headers.get('content-disposition')),
+        } as T;
+      case 'json': {
+        const text = await response.text();
+        return (text ? JSON.parse(text) : undefined) as T;
+      }
     }
   }
 
-  /**
-   * Handles error responses from the API
-   */
-  private async handleErrorResponse(response: Response): Promise<never> {
-    let body: unknown;
-
+  private async errorFor(response: Response) {
+    const text = await response.text();
+    let body: unknown = text;
     try {
-      const text = await response.text();
       body = text ? JSON.parse(text) : null;
     } catch {
-      body = null;
+      // Plain-text bodies (the 429 response is one) are reported verbatim.
     }
-
-    // Extract Retry-After header for rate limiting
     const retryAfter = response.headers.get('retry-after');
-    const retryAfterSeconds = retryAfter ? parseInt(retryAfter, 10) : undefined;
-
-    // Validate error response schema
-    const errorResponse = ErrorResponseSchema.safeParse(body);
-
-    if (errorResponse.success) {
-      throw normalizeApiError(response.status, errorResponse.data, retryAfterSeconds);
-    }
-
-    // Fallback if error response doesn't match schema
-    throw normalizeApiError(response.status, body, retryAfterSeconds);
+    return errorFromResponse(
+      response.status,
+      body,
+      retryAfter ? parseInt(retryAfter, 10) : undefined
+    );
   }
+}
 
-  /**
-   * Makes a GET request
-   */
-  async get<T>(path: string, params?: URLSearchParams): Promise<T> {
-    const queryString = params?.toString();
-    const fullPath = queryString ? `${path}?${queryString}` : path;
-    return this.request<T>(fullPath, { method: 'GET' });
-  }
+function fileNameOf(blob: Blob): string | undefined {
+  return typeof (blob as File).name === 'string' ? (blob as File).name : undefined;
+}
 
-  /**
-   * Makes a POST request
-   */
-  async post<T>(path: string, body?: unknown): Promise<T> {
-    return this.request<T>(path, { method: 'POST', body });
-  }
-
-  /**
-   * Makes a PATCH request
-   */
-  async patch<T>(path: string, body?: unknown): Promise<T> {
-    return this.request<T>(path, { method: 'PATCH', body });
-  }
-
-  /**
-   * Makes a DELETE request
-   */
-  async delete<T>(path: string): Promise<T> {
-    return this.request<T>(path, { method: 'DELETE' });
-  }
+function fileNameFromDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf8) return decodeURIComponent(utf8[1]);
+  const plain = /filename="?([^";]+)"?/i.exec(header);
+  return plain ? plain[1] : null;
 }
