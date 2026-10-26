@@ -1,128 +1,123 @@
-import { ErrorItem } from '../core/v1/schemas.js';
+/** One entry of the API's standard error envelope. */
+export interface ErrorItem {
+  code: string;
+  title: string;
+  detail?: string;
+}
 
-/**
- * Base error class for all SDK errors
- */
 export class ScalePadError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ScalePadError';
-    Object.setPrototypeOf(this, ScalePadError.prototype);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = new.target.name;
   }
 }
 
-/**
- * Error thrown when API returns an error response
- */
+/** The API answered with a non-2xx status. */
 export class ApiError extends ScalePadError {
-  public readonly statusCode: number;
-  public readonly errors: ErrorItem[];
+  readonly statusCode: number;
+  readonly errors: ErrorItem[];
+  /** The raw response body, for statuses whose body is not the standard envelope. */
+  readonly body: unknown;
 
-  constructor(statusCode: number, errors: ErrorItem[]) {
-    const message = errors.map((e) => `${e.code}: ${e.title}`).join('; ');
-    super(`API Error (${statusCode}): ${message}`);
-    this.name = 'ApiError';
+  constructor(statusCode: number, errors: ErrorItem[], body?: unknown) {
+    super(`API Error (${statusCode}): ${errors.map((e) => `${e.code}: ${e.title}`).join('; ')}`);
     this.statusCode = statusCode;
     this.errors = errors;
-    Object.setPrototypeOf(this, ApiError.prototype);
+    this.body = body;
   }
 }
 
-/**
- * Error thrown when authentication fails
- */
+/** 401: the API key is missing, expired, or its owner lost the Administrator permission. */
 export class AuthenticationError extends ApiError {
-  constructor(errors: ErrorItem[]) {
-    super(401, errors);
-    this.name = 'AuthenticationError';
-    Object.setPrototypeOf(this, AuthenticationError.prototype);
+  constructor(errors: ErrorItem[], body?: unknown) {
+    super(401, errors, body);
   }
 }
 
-/**
- * Error thrown when rate limit is exceeded
- */
+/** 402: the account is not subscribed to the product this endpoint belongs to. */
+export class SubscriptionRequiredError extends ApiError {
+  constructor(errors: ErrorItem[], body?: unknown) {
+    super(402, errors, body);
+  }
+}
+
+/** 403: the key's user lacks permission for this resource or action. */
+export class ForbiddenError extends ApiError {
+  constructor(errors: ErrorItem[], body?: unknown) {
+    super(403, errors, body);
+  }
+}
+
+/** 404: no such resource, or the caller cannot see it. */
+export class NotFoundError extends ApiError {
+  constructor(errors: ErrorItem[], body?: unknown) {
+    super(404, errors, body);
+  }
+}
+
+/** 429: over the rate limit; `retryAfter` is the server's wait in seconds when it sent one. */
 export class RateLimitError extends ApiError {
-  public readonly retryAfter?: number;
+  readonly retryAfter?: number;
 
-  constructor(errors: ErrorItem[], retryAfter?: number) {
-    super(429, errors);
-    this.name = 'RateLimitError';
+  constructor(errors: ErrorItem[], retryAfter?: number, body?: unknown) {
+    super(429, errors, body);
     this.retryAfter = retryAfter;
-    Object.setPrototypeOf(this, RateLimitError.prototype);
   }
 }
 
-/**
- * Error thrown when response validation fails
- */
-export class ResponseValidationError extends ScalePadError {
-  public readonly issues: unknown;
+/** The request never produced a response (DNS, connection, TLS, aborted stream). */
+export class NetworkError extends ScalePadError {}
 
-  constructor(message: string, issues: unknown) {
-    super(`Response validation failed: ${message}`);
-    this.name = 'ResponseValidationError';
-    this.issues = issues;
-    Object.setPrototypeOf(this, ResponseValidationError.prototype);
-  }
-}
-
-/**
- * Error thrown when network request fails
- */
-export class NetworkError extends ScalePadError {
-  public readonly cause?: Error;
-
-  constructor(message: string, cause?: Error) {
-    super(message);
-    this.name = 'NetworkError';
-    this.cause = cause;
-    Object.setPrototypeOf(this, NetworkError.prototype);
-  }
-}
-
-/**
- * Error thrown when request times out
- */
 export class TimeoutError extends ScalePadError {
   constructor(timeoutMs: number) {
     super(`Request timed out after ${timeoutMs}ms`);
-    this.name = 'TimeoutError';
-    Object.setPrototypeOf(this, TimeoutError.prototype);
   }
 }
 
+function isErrorItem(value: unknown): value is ErrorItem {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as ErrorItem).code === 'string' &&
+    typeof (value as ErrorItem).title === 'string'
+  );
+}
+
 /**
- * Normalizes API error responses into ErrorItem array
+ * Builds the most specific error for a failed response. Bodies that are not the
+ * standard `{ errors: [...] }` envelope (the 429 body is plain text) are wrapped
+ * in a synthetic item so callers always get a code and title.
  */
-export function normalizeApiError(
+export function errorFromResponse(
   statusCode: number,
   body: unknown,
   retryAfter?: number
 ): ApiError {
-  // Try to parse as standard error response
-  let errors: ErrorItem[] = [];
+  const envelope = body as { errors?: unknown } | null;
+  const errors: ErrorItem[] =
+    envelope && Array.isArray(envelope.errors) && envelope.errors.every(isErrorItem)
+      ? envelope.errors
+      : [
+          {
+            code: `HTTP_${statusCode}`,
+            title: `HTTP ${statusCode} error`,
+            detail:
+              typeof body === 'string' ? body : body == null ? undefined : JSON.stringify(body),
+          },
+        ];
 
-  if (body && typeof body === 'object' && 'errors' in body && Array.isArray(body.errors)) {
-    errors = body.errors as ErrorItem[];
-  } else {
-    // Fallback error
-    errors = [
-      {
-        code: `HTTP_${statusCode}`,
-        title: `HTTP ${statusCode} error`,
-        detail: typeof body === 'string' ? body : JSON.stringify(body),
-      },
-    ];
+  switch (statusCode) {
+    case 401:
+      return new AuthenticationError(errors, body);
+    case 402:
+      return new SubscriptionRequiredError(errors, body);
+    case 403:
+      return new ForbiddenError(errors, body);
+    case 404:
+      return new NotFoundError(errors, body);
+    case 429:
+      return new RateLimitError(errors, retryAfter, body);
+    default:
+      return new ApiError(statusCode, errors, body);
   }
-
-  // Return specific error types
-  if (statusCode === 401) {
-    return new AuthenticationError(errors);
-  }
-  if (statusCode === 429) {
-    return new RateLimitError(errors, retryAfter);
-  }
-
-  return new ApiError(statusCode, errors);
 }

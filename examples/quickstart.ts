@@ -1,105 +1,62 @@
 /**
- * Quickstart example for the ScalePad SDK
- * 
- * This example demonstrates basic usage of the SDK including:
- * - Client initialization
- * - Listing resources
- * - Filtering and sorting
- * - Pagination
+ * Quickstart for the ScalePad SDK: Core API reads, Lifecycle Manager reads and
+ * writes, pagination, and a file download.
+ *
+ *   SCALEPAD_API_KEY=... npx tsx examples/quickstart.ts
  */
+import { writeFile } from 'node:fs/promises';
+import { ScalePadClient, SubscriptionRequiredError } from '../src/index.js';
 
-import { ScalePadClient } from '../src/index.js';
+const client = new ScalePadClient({
+  apiKey: process.env.SCALEPAD_API_KEY!,
+  logLevel: 'info',
+});
 
-async function main() {
-  // Initialize the client
-  const client = new ScalePadClient({
-    apiKey: process.env.SCALEPAD_API_KEY!,
-    logLevel: 'info',
-  });
+// Core API: filter, sort, and page through clients.
+const clients = await client.core.v1.clients.list({
+  filters: { num_hardware_assets: { op: 'gte', value: 10 } },
+  sort: ['-num_hardware_assets'],
+  page_size: 25,
+});
+console.log(
+  `${clients.total_count} clients with 10+ hardware assets; first page has ${clients.data.length}`
+);
 
-  console.log('ScalePad SDK Quickstart\n');
-
-  // Example 1: List clients with pagination
-  console.log('Example 1: List clients');
-  const clientsResult = await client.core.v1.clients.list({
-    pageSize: 10,
-  });
-  console.log(`Found ${clientsResult.total_count} total clients`);
-  console.log(`Retrieved ${clientsResult.data.length} clients in this page\n`);
-
-  // Example 2: List with filtering
-  console.log('Example 2: Filter workstations');
-  const workstationsResult = await client.core.v1.hardwareAssets.list({
-    pageSize: 50,
-    filters: {
-      type: { op: 'eq', value: 'WORKSTATION' },
-    },
-  });
-  console.log(`Found ${workstationsResult.total_count} workstations\n`);
-
-  // Example 3: List with multiple filters
-  console.log('Example 3: Filter by type and RAM');
-  const filteredAssetsResult = await client.core.v1.hardwareAssets.list({
-    filters: {
-      type: { op: 'eq', value: 'WORKSTATION' },
-      'configuration.ram_bytes': { op: 'lte', value: 8000000000 },
-    },
-  });
-  console.log(`Found ${filteredAssetsResult.total_count} workstations with <= 8GB RAM\n`);
-
-  // Example 4: List with sorting
-  console.log('Example 4: Sort clients by hardware assets');
-  const sortedClientsResult = await client.core.v1.clients.list({
-    pageSize: 10,
-    sort: ['-num_hardware_assets'], // descending order
-  });
-  console.log(`Retrieved ${sortedClientsResult.data.length} clients sorted by hardware count\n`);
-
-  // Example 5: Paginate through all results
-  console.log('Example 5: Iterate through all pages');
-  let totalContacts = 0;
-  let pageCount = 0;
-  
-  for await (const page of client.core.v1.contacts.paginate({ pageSize: 100 })) {
-    pageCount++;
-    totalContacts += page.length;
-    console.log(`  Page ${pageCount}: ${page.length} contacts`);
-    
-    // Limit to first 3 pages for demo
-    if (pageCount >= 3) break;
-  }
-  console.log(`Total contacts processed: ${totalContacts}\n`);
-
-  // Example 6: Get a specific resource by ID
-  console.log('Example 6: Get client by ID');
-  if (clientsResult.data.length > 0) {
-    const firstClientId = (clientsResult.data[0] as any).id;
-    if (firstClientId) {
-      const retrievedClient = await client.core.v1.clients.getById(firstClientId);
-      console.log(`Retrieved client: ${JSON.stringify(retrievedClient, null, 2)}\n`);
-    }
-  }
-
-  // Example 7: Complex filtering with IN operator
-  console.log('Example 7: Filter with IN operator');
-  const multiTypeResult = await client.core.v1.hardwareAssets.list({
-    filters: {
-      type: { op: 'in', value: ['SERVER', 'WORKSTATION'] },
-    },
-    pageSize: 50,
-  });
-  console.log(`Found ${multiTypeResult.total_count} servers or workstations\n`);
-
-  console.log('Quickstart complete!');
+// Core API: workstations with 8 GB of RAM or less, across every page.
+let lowRam = 0;
+for await (const asset of client.core.v1.hardwareAssets.listAll({
+  filters: { type: 'WORKSTATION', 'configuration.ram_bytes': { op: 'lte', value: 8_000_000_000 } },
+  page_size: 200,
+})) {
+  lowRam++;
+  if (lowRam <= 3) console.log(`  ${asset.name ?? asset.id} at ${asset.client?.name}`);
 }
+console.log(`${lowRam} workstations have 8 GB or less`);
 
-// Run the example
-if (import.meta.url === new URL(process.argv[1], 'file://').href) {
-  main().catch((error) => {
-    console.error('Error:', error);
-    process.exit(1);
+// Core API: contacts by name. PII filters travel in the request body; the SDK routes them.
+const contacts = await client.core.v1.contacts.list({
+  filters: { 'name.full': { op: 'cont', value: 'smith' } },
+});
+console.log(`${contacts.total_count} contacts named smith`);
+
+// Lifecycle Manager requires its own subscription; the error is specific when it is missing.
+try {
+  const agreements = await client.lifecycleManager.v1.agreements.list({
+    filters: {
+      status: 'Active',
+      expiry: { op: 'in', value: ['ZeroToThirty', 'ThirtyOneToSixty'] },
+    },
+    sort: ['end_at'],
   });
+  console.log(`${agreements.total_count} active agreements expire within 60 days`);
+
+  const csv = await client.lifecycleManager.v1.agreementReports.exportCsv({});
+  await writeFile(csv.fileName ?? 'agreements.csv', csv.data);
+  console.log(`wrote ${csv.fileName ?? 'agreements.csv'} (${csv.data.byteLength} bytes)`);
+} catch (error) {
+  if (error instanceof SubscriptionRequiredError) {
+    console.log('This account has no Lifecycle Manager subscription.');
+  } else {
+    throw error;
+  }
 }
-
-export { main };
-

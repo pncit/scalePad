@@ -1,92 +1,58 @@
 import { HttpClient } from './http/httpClient.js';
 import { Logger, LogLevel, createLogger } from './logging/logger.js';
 import { RetryConfig, DEFAULT_RETRY_CONFIG } from './http/retry.js';
-import { Core } from './core/index.js';
+import { CoreV1 } from './core/v1/operations.generated.js';
+import { LifecycleManagerV1 } from './lifecycleManager/v1/operations.generated.js';
 
-/**
- * Configuration options for the ScalePad client
- */
 export interface ScalePadClientConfig {
-  /**
-   * API key for authentication
-   */
+  /** A personal API key from the ScalePad application. */
   apiKey: string;
-
   /**
-   * Base URL for the API (default: https://api.scalepad.com)
+   * Regional gateway. Core and Lifecycle Manager are served only from the US
+   * edge, which is the default.
    */
   baseUrl?: string;
-
-  /**
-   * Request timeout in milliseconds (default: 60000)
-   */
+  /** Per-attempt timeout in milliseconds (default 60 000). */
   timeoutMs?: number;
-
-  /**
-   * Retry configuration
-   */
   retry?: Partial<RetryConfig>;
-
-  /**
-   * Logger instance (optional)
-   */
+  /** Replaces the console logger. */
   logger?: Logger;
-
-  /**
-   * Log level (default: 'info')
-   */
+  /** Threshold for the console logger (default `info`). */
   logLevel?: LogLevel;
-
-  /**
-   * Custom fetch implementation (for testing/special environments)
-   */
+  /** Alternative `fetch`, for tests or custom transports. */
   fetch?: typeof globalThis.fetch;
 }
 
 const DEFAULT_BASE_URL = 'https://api.scalepad.com';
-const DEFAULT_TIMEOUT_MS = 60000;
+const DEFAULT_TIMEOUT_MS = 60_000;
 
 /**
- * Main client for interacting with the ScalePad API
+ * Entry point to the ScalePad API. Each product is a namespace of tag groups
+ * mirroring the developer documentation, so `client.core.v1.clients.list()`
+ * is "Core API → Clients → List Clients".
  */
 export class ScalePadClient {
-  private httpClient: HttpClient;
-  private logger: Logger;
-
-  /**
-   * Core API namespace
-   */
-  public readonly core: Core;
+  readonly core: { readonly v1: CoreV1 };
+  readonly lifecycleManager: { readonly v1: LifecycleManagerV1 };
+  private readonly logger: Logger;
 
   constructor(config: ScalePadClientConfig) {
-    // Validate required config
-    if (!config.apiKey) {
-      throw new Error('API key is required');
-    }
+    if (!config.apiKey) throw new Error('API key is required');
 
-    // Create logger
     this.logger = createLogger(config.logLevel ?? 'info', config.logger);
-
-    // Create HTTP client
-    this.httpClient = new HttpClient({
+    const http = new HttpClient({
       apiKey: config.apiKey,
-      baseUrl: config.baseUrl ?? DEFAULT_BASE_URL,
+      baseUrl: (config.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, ''),
       timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-      retry: {
-        ...DEFAULT_RETRY_CONFIG,
-        ...config.retry,
-      },
+      retry: { ...DEFAULT_RETRY_CONFIG, ...config.retry },
       logger: this.logger,
       fetch: config.fetch,
     });
 
-    // Initialize product namespaces
-    this.core = new Core(this.httpClient, this.logger);
+    this.core = { v1: new CoreV1(http) };
+    this.lifecycleManager = { v1: new LifecycleManagerV1(http) };
   }
 
-  /**
-   * Gets the logger instance
-   */
   getLogger(): Logger {
     return this.logger;
   }
