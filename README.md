@@ -8,7 +8,7 @@ A TypeScript SDK for the [ScalePad API](https://developer.scalepad.com/), genera
 npm install scalepad
 ```
 
-Requires Node.js 18 or later (native `fetch`, `FormData`, `Blob`). TypeScript 5 or later for the types.
+Requires Node.js 20 or later (native `fetch`, `FormData`, `File`). TypeScript 5 or later for the types.
 
 ## Quick start
 
@@ -69,7 +69,10 @@ await client.lifecycleManager.v1.agreements.list({
   filters: {
     'client.id': { op: 'in', value: ['c1', 'c2'] },
     // Repeatable fields take an array of clauses; null matches records with no value.
-    'client.segment_id': [{ op: 'eq', value: 'seg1' }, { op: 'null', value: true }],
+    'client.segment_id': [
+      { op: 'eq', value: 'seg1' },
+      { op: 'null', value: true },
+    ],
   },
 });
 ```
@@ -118,11 +121,15 @@ const agreement = await client.lifecycleManager.v1.agreements.create({
   name: 'Microsoft 365 E5',
   // …
 });
-await client.lifecycleManager.v1.agreements.update(agreement.id, { name: 'Microsoft 365 E5 (renewed)' });
+await client.lifecycleManager.v1.agreements.update(agreement.id, {
+  name: 'Microsoft 365 E5 (renewed)',
+});
 await client.lifecycleManager.v1.agreements.delete(agreement.id);
 
 // Multipart uploads take Blob/File values
-await client.lifecycleManager.v1.account.uploadLogo({ file: new File([bytes], 'logo.png', { type: 'image/png' }) });
+await client.lifecycleManager.v1.account.uploadLogo({
+  file: new File([bytes], 'logo.png', { type: 'image/png' }),
+});
 
 // Exports and reports resolve to { data: Uint8Array, contentType, fileName }
 const pdf = await client.lifecycleManager.v1.agreementReports.exportPdf({});
@@ -199,6 +206,17 @@ npm test
 npm run typecheck
 npm run lint
 ```
+
+### Releasing
+
+The package is published by CI, never by hand. Every pull request into `main`
+must bump `package.json`'s version (Dependabot and CI-only changes are exempt);
+`Validate` runs lint, typecheck, tests and the generated-output drift check on
+the merge result, and once that run succeeds on `main` the `Publish` workflow
+publishes that exact commit to npm through trusted publishing (OIDC) with a
+provenance attestation. A merge without a version bump leaves `main` green and
+unpublished until the next bump. The repository follows the
+[pncit repo standard](https://github.com/pncit/.github/blob/main/docs/repo-standard.md).
 
 ## Links
 

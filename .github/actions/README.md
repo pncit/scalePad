@@ -1,0 +1,35 @@
+# Local composite actions
+
+These are **local mirrors** (vendored copies) of composite actions from the
+private [`pncit/shared-actions`](https://github.com/pncit/shared-actions) repo,
+currently at `v3.6.1` (`8519df0`).
+
+## Why they're copied here
+
+`scalepad` is a **public** repository. GitHub does not allow a public repo to
+reference actions that live in a **private** repo, so it cannot `uses:`
+`pncit/shared-actions/...` directly (the workflow fails with
+`Unable to resolve action pncit/shared-actions, not found`). Copying the
+actions into this repo under `.github/actions/` sidesteps that — a repo-local
+action (`uses: ./.github/actions/<name>`) has no visibility restriction.
+
+This is the org standard for public repos
+([pncit/.github `docs/repo-standard.md`](https://github.com/pncit/.github/blob/main/docs/repo-standard.md#forks-and-exceptions));
+the sibling public repos [`pncit/timezest`](https://github.com/pncit/timezest),
+[`pncit/node-quickbooks`](https://github.com/pncit/node-quickbooks) and
+[`pncit/datto-rmm-api-client`](https://github.com/pncit/datto-rmm-api-client)
+carry the same copies — keep them in step.
+
+## Keeping them in sync (manual)
+
+When an action changes in `pncit/shared-actions`, re-copy it here verbatim and
+update the tag/sha above and in each file's header comment. The copies are
+intentionally byte-for-byte identical to upstream (apart from the header
+comment) so a sync is a trivial file diff — do **not** locally "optimize"
+inputs or steps; consistency with upstream is the point.
+
+| local action                       | upstream                                                     |
+| ---------------------------------- | ------------------------------------------------------------ |
+| `validate-codebase/action.yml`     | `pncit/shared-actions/.github/actions/validate-codebase`     |
+| `verify-validated-tree/action.yml` | `pncit/shared-actions/.github/actions/verify-validated-tree` |
+| `verify-version-bump/action.yml`   | `pncit/shared-actions/.github/actions/verify-version-bump`   |

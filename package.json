@@ -1,6 +1,6 @@
 {
   "name": "scalepad",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "TypeScript SDK for the ScalePad Core and Lifecycle Manager APIs, generated from the published OpenAPI documents",
   "keywords": [
     "scalepad",
@@ -11,8 +11,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/pncit/scalepad.git"
+    "url": "git+https://github.com/pncit/scalePad.git"
   },
+  "bugs": {
+    "url": "https://github.com/pncit/scalePad/issues"
+  },
+  "homepage": "https://github.com/pncit/scalePad#readme",
   "license": "MIT",
   "author": "Rob Gilbreath",
   "type": "module",
@@ -47,20 +51,23 @@
     "format": "prettier --write src scripts examples tsup.config.ts vitest.config.ts tsconfig.json package.json",
     "typecheck": "tsc --noEmit",
     "validate": "npm run typecheck && npm run lint && npm test",
-    "prepublishOnly": "npm run validate && npm run build",
-    "publish:npm": "npm publish --access public",
-    "publish:dry-run": "npm publish --dry-run"
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
-    "@types/node": "^22.20.5",
+    "@types/node": "^24.19.2",
     "openapi-typescript": "^7.13.0",
     "prettier": "^3.9.1",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.5"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
+  },
+  "overrides": {
+    "tsup": {
+      "esbuild": "0.28.2"
+    }
   },
   "allowScripts": {
     "esbuild": true
