@@ -57,7 +57,7 @@
     "@types/node": "^24.19.2",
     "openapi-typescript": "^7.13.0",
     "prettier": "^3.9.1",
-    "tsup": "^8.0.0",
+    "tsup": "^9.0.0",
     "typescript": "^5.4.0",
     "vitest": "^5.0.5"
   },
